@@ -1,8 +1,5 @@
 #include "GAMER.h"
 
-
-
-
 //-------------------------------------------------------------------------------------------------------
 // Function    :  Aux_Record_Performance
 // Description :  Record the code performance
@@ -14,27 +11,29 @@
 //                       integration is only approximate since the number of patches at each level may change
 //                       during one global time-step
 //                2. When PARTICLE is on, this routine also records the "total number of particle updates per second"
+//                3. Calculates and records the average performance (Ncell/sec and Ncell/sec/MPIrank) at the end
+//                   of the simulation.
 //
 // Parameter   :  ElapsedTime : Elapsed time of the current global step
 //-------------------------------------------------------------------------------------------------------
 void Aux_Record_Performance( const double ElapsedTime )
 {
-
    const char FileName[] = "Record__Performance";
    static bool FirstTime = true;
 
+   // Accumulate total updates and time for average performance
+   static long Total_NUpdateCell = 0;
+   static double Total_ElapsedTime = 0.0;
+   static double Total_NUpdateCell_PerSec_PerRank = 0.0;
 
-// get the total number of active particles in each rank
 #  ifdef PARTICLE
    long NPar_Lv_AllRank[NLEVEL];
    MPI_Reduce( amr->Par->NPar_Lv, NPar_Lv_AllRank, NLEVEL, MPI_LONG, MPI_SUM, 0, MPI_COMM_WORLD );
 #  endif
 
-
-// only rank 0 needs to take a note
    if ( MPI_Rank == 0 )
    {
-//    header
+      // Header
       if ( FirstTime )
       {
          if ( Aux_CheckFileExist(FileName) )
@@ -60,13 +59,12 @@ void Aux_Record_Performance( const double ElapsedTime )
 
          fprintf( File_Record, "\n" );
          fclose( File_Record );
-      } // if ( FirstTime )
+      }
 
-
-//    count the total number of cells, cell updates, and particle updates
-      long NCell=0, NUpdateCell=0, NCellThisLevel;
+      // Count total number of cells, updates, and particles
+      long NCell = 0, NUpdateCell = 0, NCellThisLevel;
 #     ifdef PARTICLE
-      long NUpdatePar=0;
+      long NUpdatePar = 0;
 #     endif
 
       for (int lv=0; lv<NLEVEL; lv++)
@@ -79,24 +77,21 @@ void Aux_Record_Performance( const double ElapsedTime )
 #        endif
       }
 
+      // Update totals for average performance
+      Total_NUpdateCell += NUpdateCell;
+      Total_ElapsedTime += ElapsedTime;
 
-//    record performance
-      const double NUpdateCell_PerSec         = NUpdateCell/ElapsedTime;
-#     ifdef GPU
-      const double NUpdateCell_PerSec_PerRank = NUpdateCell_PerSec/MPI_NRank;
-#     else
-      const double NUpdateCell_PerSec_PerRank = NUpdateCell_PerSec/MPI_NRank;
-#     endif
+      const double NUpdateCell_PerSec = NUpdateCell / ElapsedTime;
+      const double NUpdateCell_PerSec_PerRank = NUpdateCell_PerSec / MPI_NRank;
+
+      Total_NUpdateCell_PerSec_PerRank += NUpdateCell_PerSec_PerRank;
 
 #     ifdef PARTICLE
-      const double NUpdatePar_PerSec          = NUpdatePar/ElapsedTime;
-#     ifdef GPU
-      const double NUpdatePar_PerSec_PerRank  = NUpdatePar_PerSec/MPI_NRank;
-#     else
-      const double NUpdatePar_PerSec_PerRank  = NUpdatePar_PerSec/MPI_NRank;
-#     endif
+      const double NUpdatePar_PerSec = NUpdatePar / ElapsedTime;
+      const double NUpdatePar_PerSec_PerRank = NUpdatePar_PerSec / MPI_NRank;
 #     endif
 
+      // Record performance
       FILE *File_Record = fopen( FileName, "a" );
 
       fprintf( File_Record, "%14.7e%14ld%3s%14.7e%14.2e%14.2e%14.2e%14.2e%14.2e",
@@ -109,14 +104,22 @@ void Aux_Record_Performance( const double ElapsedTime )
 #     endif
 
       for (int lv=0; lv<NLEVEL; lv++)
-      fprintf( File_Record, "%14ld", amr->NUpdateLv[lv] );
+         fprintf( File_Record, "%14ld", amr->NUpdateLv[lv] );
 
       fprintf( File_Record, "\n" );
-
       fclose( File_Record );
 
-   } // if ( MPI_Rank == 0 )
+      // At the end of the simulation, calculate and record average performance
+      if (  Step == END_STEP || Time[0] >= END_T  ) // Replace with the actual condition for end of simulation
+      {
+         const double Avg_NUpdateCell_PerSec = Total_NUpdateCell / Total_ElapsedTime;
+         const double Avg_NUpdateCell_PerSec_PerRank = Total_NUpdateCell_PerSec_PerRank / Step;
 
-} // FUNCTION : Aux_Record_Performance
-
-
+         File_Record = fopen( FileName, "a" );
+         fprintf( File_Record, "\n# Average performance over the entire simulation:\n");
+         fprintf( File_Record, "#%14s%14s%14s\n", "TotalTime", "AvgPerf_Overall", "AvgPerf_PerRank");
+         fprintf( File_Record, "%14.7e%14.2e%14.2e\n", Total_ElapsedTime, Avg_NUpdateCell_PerSec, Avg_NUpdateCell_PerSec_PerRank);
+         fclose( File_Record );
+      }
+   }
+}
