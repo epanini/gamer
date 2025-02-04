@@ -776,6 +776,72 @@ void Flu_ResetByUser_API_ClusterMerger( const int lv, const int FluSg, const int
 
 } // FUNCTION : Flu_ResetByUser_API_ClusterMerger
 
+void Mis_UserWorkBeforeNextSubstep_ClusterMerger(const int lv, const double TimeNew, const double TimeOld, const double dt)
+{
+   const char FileName[] = "output.txt";
+   static bool FirstTime = true;
+
+    // Header setup
+   if (FirstTime)
+   {
+      if (MPI_Rank == 0)
+      {
+         if (Aux_CheckFileExist(FileName))
+            Aux_Message(stderr, "WARNING: file \"%s\" already exists!!\n", FileName);
+
+            FILE *File_User = fopen(FileName, "a");
+            fprintf(File_User, "#%13s%14s%14s%14s%14s%14s%14s%14s%14s%14s%14s%14s%14s%14s%14s%14s%14s\n",
+                    "Time", "dt", "Inflow", "Inflow_cold", "Mdot_BH",
+                    "Mdot", "Pdot", "Edot", "M_inj","P_inj","E_inj","M_inj_exp","E_inj_exp","GasMass","ParMass","ColdGasMass","T_ff");
+            fclose(File_User);
+      }
+
+      FirstTime = false;
+   }
+
+    // Record data only at the maximum refinement level
+   if (lv == MAX_LEVEL)
+   {
+      if (MPI_Rank == 0)
+      {
+         FILE *File_User = fopen(FileName, "a");
+         for (int c = 0; c < Merger_Coll_NumHalos; ++c)
+         {
+            double T_ff = sqrt(2 * pow(R_acc, 3) / (NEWTON_G * (GasMass[c] + ParMass[c])));
+            fprintf(File_User, "%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e%14.7e\n",
+                        TimeNew, // Current physical time
+                        dt,
+                        Inflow[c] * (UNIT_M / UNIT_T) * (Const_yr / Const_Msun), // inflow tot Convert Inflow to Msun/yr
+                        Inflow_cold[c] * (UNIT_M / UNIT_T) * (Const_yr / Const_Msun), //inflow only cold gas temp <5e6K
+                        Mdot_BH[c] * (UNIT_M / UNIT_T) * (Const_yr / Const_Msun), //accretion rate ColdGas/Tff
+                        Mdot[c] * (UNIT_M / UNIT_T) * (Const_yr / Const_Msun),   // accretion rate injection (Mdot_BH*eta) Convert Mdot to Msun/yr
+                        Pdot[c] * (UNIT_M * UNIT_V / UNIT_T) * (Const_Msun * Const_km / Const_yr), //sqrt(2*eta*eps_f*(1.0-eps_m)) * Mdot_BH[c] * (Const_c/UNIT_V) Power rate Convert Pdot to Msun km/s/yr
+                        Edot[c] * (UNIT_E / UNIT_T),   // eps_f * Mdot_BH[c] * SQR(Const_c/UNIT_V) Energy rate Convert Edot to erg/s
+                        M_inj[c], //Mdot*dt/V_cyl  g/cm^3
+                        P_inj[c], //Pdot*dt/V_cyl  g/cm^2*s
+                        E_inj[c], //Edot*dt/V_cyl  erg/s/cm^3
+                        M_inj_exp[c]*= UNIT_M/Const_Msun, //M_dot*dt expected mass injected in g
+                        E_inj_exp[c]*= UNIT_E,  //E_dot*dt  expected energy injected in erg
+                        GasMass[c]*(UNIT_M/Const_Msun), //total gas mass in Msun
+                        ParMass[c]*(UNIT_M/Const_Msun) , //only DM mass in Msun
+                        ColdGasMass[c]*(UNIT_M/Const_Msun), //only cold mass in Msun
+                        T_ff ); //freee fall time seconds    sqrt(2 * pow(R_acc, 3) / (NEWTON_G * (GasMass[c] + ParMass[c])))                       
+         }
+         fclose(File_User);
+      }
+   }
+
+    // Optional: Close the file at the end of the simulation
+   if (TimeNew >= END_T || Step >= END_STEP)
+   {
+      if (MPI_Rank == 0)
+      {
+         Aux_Message(stdout, "Simulation complete. Data recording finalized.\n");
+      }
+   }
+  
+
+}
 
 
 #endif // #if ( MODEL == HYDRO  &&  defined GRAVITY )
