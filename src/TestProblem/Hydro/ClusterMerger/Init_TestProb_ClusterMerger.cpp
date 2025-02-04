@@ -135,6 +135,8 @@ static double *JetDirection = NULL;   // jet direction[time/theta_1/phi_1/theta_
 
 
 // problem-specific function prototypes
+void Mis_UserWorkBeforeNextSubstep_ClusterMerger( const int lv, const double TimeNew, const double TimeOld, const double dt );
+void (*Mis_UserWorkBeforeNextSubstep_Ptr)( const int lv, const double TimeNew, const double TimeOld, const double dt );
 #ifdef MASSIVE_PARTICLES
 long Read_Particle_Number_ClusterMerger(std::string filename);
 void Par_Init_ByFunction_ClusterMerger(const long NPar_ThisRank,
@@ -891,6 +893,7 @@ void Init_TestProb_Hydro_ClusterMerger()
 #  ifdef MHD
    Init_Function_BField_User_Ptr  = SetBFieldIC;
 #  endif
+   Mis_UserWorkBeforeNextSubstep_Ptr = Mis_UserWorkBeforeNextSubstep_ClusterMerger;
 #  endif // if ( MODEL == HYDRO  &&  defined MASSIVE_PARTICLES )
 
    if ( MPI_Rank == 0 )    Aux_Message( stdout, "%s ... done\n", __FUNCTION__ );
